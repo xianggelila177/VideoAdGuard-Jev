@@ -45,7 +45,7 @@ B站字幕 / Groq 转录
 
 ### 从源码构建
 
-需要 Node.js 18 或更高版本。
+需要 Node.js 20 LTS、22 LTS 或 24 及以上版本（与 Vitest 4 的运行要求一致）。
 
 ```bash
 npm ci
