@@ -7,14 +7,27 @@ import './utils/logger';
 import { STORAGE_KEYS } from './services/llm/config';
 import { LLMGateway } from './services/llm/providers';
 import { LLMInvokePayload, StoredLLMSettings } from './services/llm/types';
+import { TypeSafeGateway } from './services/typesafe/gateway';
+import { SystemOneInvokePayload } from './services/typesafe/types';
 import { createHttpError, normalizeErrorForUser } from './utils/errors';
 
 export {}
+
+chrome.runtime.onInstalled.addListener(async ({ reason }) => {
+  if (reason !== 'install') return;
+  const existing = await chrome.storage.local.get(['provider', 'baseUrl', 'model']);
+  const defaults: Record<string, string> = {};
+  if (!existing.provider) defaults.provider = 'typesafe';
+  if (!existing.baseUrl) defaults.baseUrl = 'https://api.typesafe.ai';
+  if (!existing.model) defaults.model = 'jev-latest';
+  if (Object.keys(defaults).length) await chrome.storage.local.set(defaults);
+});
 
 // 消息类型枚举
 enum MessageType {
   TRANSCRIBE_AUDIO_FILE_STREAM = 'TRANSCRIBE_AUDIO_FILE_STREAM',
   LLM_INVOKE = 'LLM_INVOKE',
+  SYSTEM_ONE_INVOKE = 'SYSTEM_ONE_INVOKE',
   API_REQUEST = 'API_REQUEST',
   CLOUD_CACHE_REQUEST = 'CLOUD_CACHE_REQUEST',
 }
@@ -44,6 +57,11 @@ interface LLMInvokeMessage extends BaseMessage {
     maxTokens?: number;
     temperature?: number;
   };
+}
+
+interface SystemOneInvokeMessage extends BaseMessage {
+  type: MessageType.SYSTEM_ONE_INVOKE;
+  payload: SystemOneInvokePayload;
 }
 
 // 音频转录消息
@@ -96,7 +114,7 @@ class MessageHandler {
   /**
    * 处理来自content script的消息
    */
-  static handleMessage(message: BaseMessage | ApiRequestMessage | LLMInvokeMessage | AudioTranscriptionMessage | CloudCacheRequestMessage, _sender: chrome.runtime.MessageSender, sendResponse: (response: ApiResponse) => void): boolean {
+  static handleMessage(message: BaseMessage | ApiRequestMessage | LLMInvokeMessage | SystemOneInvokeMessage | AudioTranscriptionMessage | CloudCacheRequestMessage, _sender: chrome.runtime.MessageSender, sendResponse: (response: ApiResponse) => void): boolean {
     try {
       // 处理语音识别请求
       if (message.type === MessageType.TRANSCRIBE_AUDIO_FILE_STREAM) {
@@ -107,6 +125,11 @@ class MessageHandler {
       // 处理模型调用请求
       if (message.type === MessageType.LLM_INVOKE) {
         LLMInvokeHandler.handle(message as LLMInvokeMessage, sendResponse);
+        return true; // 异步响应
+      }
+
+      if (message.type === MessageType.SYSTEM_ONE_INVOKE) {
+        SystemOneInvokeHandler.handle(message as SystemOneInvokeMessage, sendResponse);
         return true; // 异步响应
       }
 
@@ -214,6 +237,29 @@ class LLMInvokeHandler {
       sendResponse({ success: true, data: result });
     } catch (error) {
       console.warn('【VideoAdGuard】[Background] 模型请求失败:', error);
+      sendResponse({
+        success: false,
+        error: normalizeErrorForUser(error, 'llm')
+      });
+    }
+  }
+}
+
+class SystemOneInvokeHandler {
+  static async handle(message: SystemOneInvokeMessage, sendResponse: (response: ApiResponse) => void): Promise<void> {
+    try {
+      const payload = message.payload;
+      if (!payload || payload.state === undefined || !payload.questions || typeof payload.questions !== 'object') {
+        throw new Error('TypeSafe 请求参数无效');
+      }
+
+      const storedSettings = (await chrome.storage.local.get(
+        [...STORAGE_KEYS]
+      )) as StoredLLMSettings;
+      const result = await TypeSafeGateway.invoke(payload, storedSettings);
+      sendResponse({ success: true, data: result });
+    } catch (error) {
+      console.warn('【VideoAdGuard】[Background] TypeSafe 请求失败:', error);
       sendResponse({
         success: false,
         error: normalizeErrorForUser(error, 'llm')

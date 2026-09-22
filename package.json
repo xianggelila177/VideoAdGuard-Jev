@@ -1,7 +1,17 @@
 {
-  "name": "video-ad-guard",
-  "version": "1.4.2",
+  "name": "video-ad-guard-jev",
+  "version": "1.5.0",
+  "description": "Bilibili sponsored-segment detection powered by TypeSafe Jev",
+  "private": true,
   "license": "GPL-2.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xianggelila177/VideoAdGuard-Jev.git"
+  },
+  "homepage": "https://github.com/xianggelila177/VideoAdGuard-Jev#readme",
+  "bugs": {
+    "url": "https://github.com/xianggelila177/VideoAdGuard-Jev/issues"
+  },
   "scripts": {
     "build": "node scripts/build.js",
     "build:chrome": "webpack --config webpack.config.js --env browser=chrome",

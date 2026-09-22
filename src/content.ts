@@ -5,6 +5,7 @@ import { WhitelistService } from './services/whitelist';
 import { AudioService } from './services/audio';
 import { CacheService } from './services/cache';
 import { CloudCacheService } from './services/cloud-cache';
+import { JevAdDetector } from './services/typesafe/ad-detector';
 import { normalizeErrorForUser } from './utils/errors';
 
 // 新增：广告片段接口，用于支持交互状态
@@ -219,13 +220,12 @@ class AdDetector {
       if (videoElement) {
         this.createAdMarkers(videoElement);
 
-        // 云端缓存的 isDetectionConfident 可能因上传时 videoElement.duration 为 NaN 而错误地为 false，
-        // 因此对于云端结果，基于当前 video 元素重新计算置信度
+        // 云端结果仍需通过当前视频时长的结构性安全检查，但不能覆盖模型给出的低置信度。
         let isConfident = result.isDetectionConfident;
         if (source === 'remote') {
           const videoDuration = videoElement.duration;
           const totalAdDuration = result.adTimeRanges.reduce((sum, [start, end]) => sum + (end - start), 0);
-          isConfident = result.adTimeRanges.length > 0 && !isNaN(videoDuration) && videoDuration > 0 && totalAdDuration < (videoDuration * 0.5);
+          isConfident = isConfident && result.adTimeRanges.length > 0 && !isNaN(videoDuration) && videoDuration > 0 && totalAdDuration < (videoDuration * 0.5);
         }
 
         const { autoSkipAd } = await chrome.storage.local.get({ autoSkipAd: false });
@@ -290,7 +290,7 @@ class AdDetector {
   public static async analyze() {
     try {
       // 检查插件是否启用（默认为启用，只有明确设置为 false 时才禁用）
-      const settings = await chrome.storage.local.get(['enableExtension', 'restrictedMode']);
+      const settings = await chrome.storage.local.get(['enableExtension', 'restrictedMode', 'provider']);
       if (settings.enableExtension === false) {
         console.log('【VideoAdGuard】插件已禁用，跳过广告检测');
         this.adDetectionResult = (this.adDetectionResult ? this.adDetectionResult + ' | ' : '') +'插件已禁用';
@@ -310,7 +310,12 @@ class AdDetector {
 
       // 先查找本地缓存
       const cachedResult = await CacheService.getDetectionResult(bvid);
-      if (cachedResult) {
+      const canUseLocalCache = cachedResult && (
+        settings.provider !== 'typesafe' ||
+        cachedResult.recordSource === 'user' ||
+        cachedResult.provider === 'typesafe'
+      );
+      if (canUseLocalCache && cachedResult) {
         console.log('【VideoAdGuard】使用本地缓存的检测结果');
         await this.applyDetectionResult(bvid, {
           exist: cachedResult.exist,
@@ -320,6 +325,9 @@ class AdDetector {
         }, 'local');
         return;
       }
+      if (cachedResult && !canUseLocalCache) {
+        console.log('【VideoAdGuard】当前选择 Jev，忽略由其他模型生成的本地缓存');
+      }
 
       // 本地缓存未命中：并行查询云端缓存和视频信息
       const [videoInfoResult, remoteCacheResult] = await Promise.allSettled([
@@ -328,8 +336,14 @@ class AdDetector {
       ]);
 
       // 云端缓存命中 → 应用结果并写入本地缓存
-      if (remoteCacheResult.status === 'fulfilled' && remoteCacheResult.value) {
-        const remote = remoteCacheResult.value;
+      const remoteCandidate = remoteCacheResult.status === 'fulfilled' ? remoteCacheResult.value : null;
+      const canUseRemoteCache = remoteCandidate && (
+        settings.provider !== 'typesafe' ||
+        remoteCandidate.source === 'user' ||
+        remoteCandidate.provider === 'typesafe'
+      );
+      if (canUseRemoteCache && remoteCandidate) {
+        const remote = remoteCandidate;
         console.log('【VideoAdGuard】使用云端缓存的检测结果');
 
         // 写入本地缓存（标记来源为 remote）
@@ -342,6 +356,9 @@ class AdDetector {
           isDetectionConfident: remote.isDetectionConfident,
         }, 'remote');
         return;
+      }
+      if (remoteCandidate && !canUseRemoteCache) {
+        console.log('【VideoAdGuard】当前选择 Jev，忽略由其他模型生成的云端缓存');
       }
 
       // 云端未命中，继续使用视频信息
@@ -362,7 +379,7 @@ class AdDetector {
       const topComment = topComments?.message || null;
       const jumpUrls = topComments?.jump_url || null;
       let jumpUrlMessages: Record<string, Record<string, any>> = {};
-      if(topComment && (Object.keys(jumpUrls).length===0 || jumpUrls===null)){
+      if(topComment && (!jumpUrls || Object.keys(jumpUrls).length===0)){
         jumpUrlMessages["置顶评论"] = {"是否有链接": false};
       }
       else if(jumpUrls) {
@@ -399,15 +416,23 @@ class AdDetector {
         for (const [jumpUrl, jumpUrlMessage] of Object.entries(jumpUrlMessages)){
           if (jumpUrlMessage["是否为官方商品链接"]) {
             hasAdCondition = true;
-            const ad_text = "置顶评论：" + topComment + " 链接标题：" + jumpUrlMessage["链接标题"];
-            try {
-              const response = await AIService.extractProductName(ad_text);
-              good_name.push(response);
-              console.log('【VideoAdGuard】限制模式：成功提取商品名称:', response);
-            } catch (error) {
-              console.warn('【VideoAdGuard】限制模式：提取商品名称失败:', error);
-              // 如果提取失败，使用原始链接标题作为商品名
-              good_name.push(ad_text);
+            const linkTitle = typeof jumpUrlMessage["链接标题"] === 'string'
+              ? jumpUrlMessage["链接标题"].trim()
+              : '';
+            const ad_text = "置顶评论：" + topComment + " 链接标题：" + linkTitle;
+            if (settings.provider === 'typesafe') {
+              // Jev 不生成自由文本；保留链接标题作为候选，再由 Choice 选择。
+              if (linkTitle) good_name.push(linkTitle);
+            } else {
+              try {
+                const response = await AIService.extractProductName(ad_text);
+                good_name.push(response);
+                console.log('【VideoAdGuard】限制模式：成功提取商品名称:', response);
+              } catch (error) {
+                console.warn('【VideoAdGuard】限制模式：提取商品名称失败:', error);
+                // 如果提取失败，使用原始链接标题作为商品名
+                good_name.push(linkTitle || ad_text);
+              }
             }
           }
         }
@@ -417,7 +442,17 @@ class AdDetector {
           this.adDetectionResult = (this.adDetectionResult ? this.adDetectionResult + ' | ' : '') + '未检测到广告条件';
           this.removeAutoSkipListener();
           // 保存无广告结果到缓存
-          await CacheService.saveDetectionResult(bvid, false, [], [], false);
+          await CacheService.saveDetectionResult(
+            bvid,
+            false,
+            [],
+            [],
+            false,
+            'local',
+            undefined,
+            'restricted-rule',
+            settings.provider || 'unknown'
+          );
           return;
         }
       }
@@ -507,8 +542,28 @@ class AdDetector {
       }
 
       // 限制模式处理逻辑
-      let rawResult;
-      if (isRestrictedMode && hasAdCondition) {
+      let rawResult: {
+        text: string;
+        provider: string;
+        model: string;
+        confidenceScore?: number;
+        isDetectionConfident?: boolean;
+      };
+      if (settings.provider === 'typesafe') {
+        console.log('【VideoAdGuard】开始使用 TypeSafe Jev 进行两阶段广告检测...');
+        rawResult = await JevAdDetector.detectAd({
+          title: videoInfo.title,
+          topComment: topComment,
+          additionalMessages: jumpUrlMessages,
+          captions: captions,
+          goodNames: good_name,
+        }, captionsData!.body);
+        llmMeta = { provider: rawResult.provider, model: rawResult.model };
+        console.log('【VideoAdGuard】Jev 检测完成:', {
+          model: rawResult.model,
+          confidenceScore: rawResult.confidenceScore,
+        });
+      } else if (isRestrictedMode && hasAdCondition) {
         console.log('【VideoAdGuard】限制模式：检测到可能存在广告，调用大模型进行详细分析...');
         console.log('【VideoAdGuard】限制模式：预提取的商品名称:', good_name);
         const restrictResult = await AIService.detectAdRestricted({
@@ -547,7 +602,7 @@ class AdDetector {
               .replace(/```/g, '')
           : JSON.stringify(rawText);
 
-        result = parseAdResult(cleanJson);
+        result = parseAdResult(cleanJson, captionsData!.body.length);
 
         // 验证返回数据格式
         if (typeof result.exist !== 'boolean' || !Array.isArray(result.index_lists)) {
@@ -603,10 +658,13 @@ class AdDetector {
           totalAdDuration = second_lists.reduce((sum, [start, end]) => sum + (end - start), 0);
         }
 
-        const isDetectionConfident =
+        const structuralSafety =
           second_lists.length > 0 &&
           this.validIndexLists.length <= 3 &&
           totalAdDuration < (videoDuration * 0.5);
+        const isDetectionConfident = rawResult.provider === 'typesafe'
+          ? structuralSafety && rawResult.isDetectionConfident === true
+          : structuralSafety;
 
         await CacheService.saveDetectionResult(bvid, true, result.good_name || [], second_lists, isDetectionConfident, 'local', undefined, llmMeta.model, llmMeta.provider);
 
@@ -635,7 +693,17 @@ class AdDetector {
         console.log('【VideoAdGuard】无广告内容');
         this.removeAutoSkipListener();
 
-        await CacheService.saveDetectionResult(bvid, false, [], [], false);
+        await CacheService.saveDetectionResult(
+          bvid,
+          false,
+          [],
+          [],
+          false,
+          'local',
+          undefined,
+          llmMeta.model,
+          llmMeta.provider
+        );
 
         // 同步调用 applyDetectionResult 确保反馈按钮被创建
         await this.applyDetectionResult(bvid, {

@@ -19,12 +19,16 @@ interface SDKPreset {
 }
 
 const SDK_OPTIONS: SDKPreset[] = [
+  { value: 'typesafe', label: 'TypeSafe Jev' },
   { value: 'openai', label: 'OpenAI 兼容' },
   { value: 'anthropic', label: 'Anthropic 兼容' },
   { value: 'custom_fetch', label: '自定义 Fetch' },
 ];
 
 const SDK_PRESETS: Record<LLMProvider, BaseUrlPreset[]> = {
+  typesafe: [
+    { name: 'TypeSafe Jev', baseUrl: 'https://api.typesafe.ai', actionLabel: '控制台', actionUrl: 'https://console.typesafe.ai/' },
+  ],
   openai: [
     { name: '智谱 AI', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', actionLabel: '注册', actionUrl: 'https://www.bigmodel.cn/glm-coding?ic=NZ1MQISIX0' },
     { name: '智谱 Coding Plan', baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4 ', actionLabel: '注册', actionUrl: 'https://www.bigmodel.cn/glm-coding?ic=NZ1MQISIX0' },
@@ -183,7 +187,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     apiKeyInput.value = apiKeysByBaseUrl[activeBaseUrlKey] || '';
-    modelInput.value = modelsByBaseUrl[activeBaseUrlKey] || '';
+    modelInput.value = modelsByBaseUrl[activeBaseUrlKey] || (getSelectedProvider() === 'typesafe' ? 'jev-latest' : '');
   }
 
   function renderBaseUrlPresets(provider: LLMProvider) {
@@ -206,9 +210,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   function updateProviderState(provider: LLMProvider, preserveBaseUrl: boolean = false) {
     setSelectedProvider(provider);
     if (!preserveBaseUrl) {
-      baseUrlInput.value = getCachedBaseUrl(provider);
+      baseUrlInput.value = getCachedBaseUrl(provider) || (provider === 'typesafe' ? 'https://api.typesafe.ai' : '');
     }
-    apiKeyInput.placeholder = provider === 'custom_fetch' ? '可留空，本地服务如需鉴权可填写' : '请输入API密钥';
+    apiKeyInput.placeholder = provider === 'custom_fetch'
+      ? '可留空，本地服务如需鉴权可填写'
+      : provider === 'typesafe'
+        ? '请输入 TypeSafe API 密钥'
+        : '请输入API密钥';
+    modelInput.placeholder = provider === 'typesafe' ? 'jev-latest' : '请输入模型名称';
     renderBaseUrlPresets(provider);
   }
 
@@ -457,7 +466,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const storedBaseUrlsByProvider = settings.baseUrlsByProvider as Partial<Record<LLMProvider, unknown>> | undefined;
   baseUrlsByProvider = {};
-  (['openai', 'anthropic', 'custom_fetch'] as const).forEach((provider) => {
+  (['typesafe', 'openai', 'anthropic', 'custom_fetch'] as const).forEach((provider) => {
     const value = storedBaseUrlsByProvider?.[provider];
     if (typeof value === 'string' && value.trim()) {
       baseUrlsByProvider[provider] = value.trim();
@@ -468,9 +477,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   modelsByBaseUrl = settings.modelsByBaseUrl || {};
   const persistedProvider = settings.provider as StoredLLMSettings['provider'];
   const initialProvider: LLMProvider =
-    persistedProvider === 'openai' || persistedProvider === 'anthropic' || persistedProvider === 'custom_fetch'
+    persistedProvider === 'typesafe' || persistedProvider === 'openai' || persistedProvider === 'anthropic' || persistedProvider === 'custom_fetch'
       ? persistedProvider
-      : 'openai';
+      : 'typesafe';
   const resolvedLLMSettings = resolveLLMSettings({
     provider: initialProvider,
     baseUrl: settings.baseUrl,
@@ -483,7 +492,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateProviderState(resolvedLLMSettings.provider, true);
   const persistedBaseUrl = typeof settings.baseUrl === 'string' ? settings.baseUrl.trim() : '';
   const cachedBaseUrl = getCachedBaseUrl(initialProvider);
-  const initialBaseUrl = persistedBaseUrl || cachedBaseUrl || resolvedLLMSettings.baseUrl;
+  const initialBaseUrl = persistedBaseUrl || cachedBaseUrl || resolvedLLMSettings.baseUrl ||
+    (initialProvider === 'typesafe' ? 'https://api.typesafe.ai' : '');
   if (initialBaseUrl) {
     baseUrlsByProvider[initialProvider] = initialBaseUrl;
   }
@@ -504,6 +514,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     modelInput.value = modelsByBaseUrl[activeBaseUrlKey];
   } else if (settings.model) {
     modelInput.value = settings.model;
+  } else if (initialProvider === 'typesafe') {
+    modelInput.value = 'jev-latest';
   }
   if (typeof settings.enableExtension === 'boolean') enableExtensionCheckbox.checked = settings.enableExtension;
   if (typeof settings.autoSkipAd === 'boolean') autoSkipAdCheckbox.checked = settings.autoSkipAd;

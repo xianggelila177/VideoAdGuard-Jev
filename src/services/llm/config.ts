@@ -1,6 +1,7 @@
 import { LLMProvider, ResolvedLLMSettings, StoredLLMSettings } from './types';
 
 export const DEFAULT_MODEL = '';
+export const DEFAULT_TYPESAFE_MODEL = 'jev-latest';
 export const STORAGE_KEYS = ['provider', 'baseUrl', 'apiUrl', 'apiKey', 'model', 'enableLocalOllama'] as const;
 
 export function resolveLLMSettings(settings: StoredLLMSettings): ResolvedLLMSettings {
@@ -12,13 +13,13 @@ export function resolveLLMSettings(settings: StoredLLMSettings): ResolvedLLMSett
     provider,
     apiUrl,
     apiKey: settings.apiKey || null,
-    model: (settings.model || DEFAULT_MODEL).trim(),
+    model: resolveModel(settings.model, provider),
     baseUrl,
   };
 }
 
 function requireExplicitProvider(provider: StoredLLMSettings['provider']): LLMProvider {
-  if (provider === 'openai' || provider === 'anthropic' || provider === 'custom_fetch') {
+  if (provider === 'openai' || provider === 'anthropic' || provider === 'custom_fetch' || provider === 'typesafe') {
     return provider;
   }
   throw new Error('未设置SDK类型，请在设置中显式选择后重试');
@@ -31,6 +32,11 @@ export function buildApiUrl(provider: LLMProvider, baseUrl: string): string {
   }
 
   switch (provider) {
+    case 'typesafe':
+      if (normalizedBaseUrl.endsWith('/v1/systemone')) return normalizedBaseUrl;
+      return normalizedBaseUrl.endsWith('/v1')
+        ? `${normalizedBaseUrl}/systemone`
+        : `${normalizedBaseUrl}/v1/systemone`;
     case 'anthropic':
       return normalizedBaseUrl.endsWith('/v1')
         ? `${normalizedBaseUrl}/messages`
@@ -81,6 +87,8 @@ function resolveBaseUrl(settings: StoredLLMSettings, provider: LLMProvider): str
 
 function normalizeBaseUrl(apiUrl: string, provider: LLMProvider): string {
   switch (provider) {
+    case 'typesafe':
+      return trimSuffixes(apiUrl, ['/v1/systemone', '/systemone']);
     case 'anthropic':
       return trimSuffixes(apiUrl, ['/v1/messages', '/messages']);
     case 'custom_fetch':
@@ -89,6 +97,12 @@ function normalizeBaseUrl(apiUrl: string, provider: LLMProvider): string {
     default:
       return trimSuffixes(apiUrl, ['/chat/completions', '/responses']);
   }
+}
+
+function resolveModel(model: string | undefined, provider: LLMProvider): string {
+  const normalized = (model || '').trim();
+  if (normalized) return normalized;
+  return provider === 'typesafe' ? DEFAULT_TYPESAFE_MODEL : DEFAULT_MODEL;
 }
 
 function trimSuffixes(url: string, suffixes: string[]): string {

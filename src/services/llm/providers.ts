@@ -38,6 +38,8 @@ export class LLMGateway {
     }
 
     switch (settings.provider) {
+      case 'typesafe':
+        throw new Error('TypeSafe Jev 使用结构化 System One 接口，不能作为聊天模型调用');
       case 'anthropic':
         return this.invokeWithAnthropic(payload, settings);
       case 'custom_fetch':

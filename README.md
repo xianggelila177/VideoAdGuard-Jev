@@ -1,266 +1,101 @@
-# VideoAdGuard - B站视频植入广告检测器
+# VideoAdGuard Jev
 
-VideoAdGuard 是一个基于大语言模型的B站视频植入广告检测工具，能够自动识别B站视频中的植入广告内容，并提供跳过广告的功能。
+使用 TypeSafe Jev 对哔哩哔哩视频字幕进行结构化广告识别，并在可信度足够高时自动跳过植入广告。
 
-如果你觉得这个插件有用，请给项目点个Star⭐支持一下！
+> **衍生项目声明**：本项目基于 [ZeroTang05/VideoAdGuard](https://github.com/ZeroTang05/VideoAdGuard) 二次开发，上游基线为提交 [`1a3956c`](https://github.com/ZeroTang05/VideoAdGuard/commit/1a3956ce7ba695c794cac55ce825c0b19207382a)。原始代码的著作权归上游作者及贡献者所有。本项目不是上游官方版本，也与 TypeSafe AI 没有官方隶属关系。详细来源见 [NOTICE.md](NOTICE.md)。
 
-[演示视频](https://www.bilibili.com/video/BV1UGeBztE2T/)
+## 主要变化
 
-<div align="center">
-  <img src="./icons/icon128.png" alt="VideoAdGuard Logo">
+- 新增 `TypeSafe Jev` 提供商，默认调用 `https://api.typesafe.ai/v1/systemone` 和 `jev-latest`。
+- 使用 Noul 概率完成广告、购买引导、普通内容和商品匹配的独立判断。
+- 采用两阶段分析：重叠字幕窗口粗筛，再对候选区域逐字幕细化边界。
+- 商品名通过 Choice 从置顶评论或链接标题中选择，不依赖自由文本生成。
+- 字幕索引、时间映射、区间合并和安全阈值全部由本地代码确定。
+- 只有高置信度且片段数量、总时长均通过检查时才自动跳过。
+- Jev 缓存与其他模型缓存隔离，避免旧模型结果触发自动跳过。
+- 保留上游的 OpenAI、Anthropic、自定义 Fetch、Groq 转录、白名单和云端缓存能力。
 
-<!-- 浏览器插件下载 -->
+## 工作流程
 
-<div style="margin-top: 20px;">
-    <a href="https://microsoftedge.microsoft.com/addons/detail/videoadguard/mpfelbgplaolpbjmdbjjajonkmmgekgo/" target="_blank">
-      <img src="https://img.shields.io/badge/Microsoft%20Edge-0078D4?style=for-the-badge&logo=Microsoft-edge&logoColor=white" alt="Edge插件下载">
-    </a>
-    <a href="https://chromewebstore.google.com/detail/videoadguard/nmkkpflniidbbodhjhjaijadbccidbgi/" target="_blank">
-      <img src="https://img.shields.io/badge/Google%20Chrome-EEDD82?style=for-the-badge&logo=GoogleChrome&logoColor=red" alt="Chrome插件下载">
-    </a>
-    <a href="https://addons.mozilla.org/zh-CN/firefox/addon/videoadguard/" target="_blank">
-      <img src="https://img.shields.io/badge/Firefox-FF7139?style=for-the-badge&logo=Firefox-Browser&logoColor=white" alt="Firefox插件下载">
-    </a>
-  </div>
-</div>
-
-## News
-
-- v1.4.0 新增云端缓存功能，支持社区共享检测结果和用户反馈
-- v1.3.0 重构LLM模块，支持更多模型，包括Coding Plan
-- v1.2.9~v1.2.11 添加手动控制广告区间，修复已知bug
-- v1.2.8 提供Groq代理服务
-- v1.2.7 适配Firefox浏览器
-- v1.2.6 支持 glm-4.5 系列模型，适配 Chrome浏览器
-- v1.2.5 优化缓存机制；优化av号处理
-- v1.2.4 新增限制模式，仅在有商品链接时进行识别；优化界面
-- v1.2.3 新增音频识别功能，支持无字幕视频检测；新增广告检测结果缓存机制
-- v1.2.2 新增关闭插件开关，优化界面，优化广告判断逻辑
-- v1.2.1 支持自定义UP白名单
-- v1.2.0 支持自动跳过
-- v1.1.3 支持本地Ollama模型
-
-## 功能特点
-
-- 🎯 **精准识别**：采用大语言模型分析视频字幕，准确定位植入广告内容
-- 🎵 **音频识别**：支持无字幕视频的音频识别检测，使用免费的Groq服务商
-- 🚀 **便捷操作**：检测到广告后自动显示跳过按钮，一键跳过广告片段
-- 🔄 **自动跳过**：支持自动跳过已识别的广告内容
-- 💾 **智能缓存**：本地缓存检测结果，大幅提升重复访问速度
-- ☁️ **云端缓存**：社区共享检测结果，AI检测前优先查询云端缓存加速
-- 🌈 **广泛兼容**：支持多种主流浏览器，包括Edge、Chrome等
-- ⚙️ **灵活定制**：支持多种AI模型接入，包括智谱AI、OpenAI、DeepSeek等
-- 🏠 **本地部署**：支持本地Ollama模型，保护隐私数据
-
-## 安装方法
-
-### 浏览器插件版（推荐）
-
-点击上方对应浏览器的图标即可下载安装：
-
-- **Edge浏览器**：[Edge插件下载](https://microsoftedge.microsoft.com/addons/detail/videoadguard/mpfelbgplaolpbjmdbjjajonkmmgekgo/)
-- **Chrome浏览器**：[Chrome插件下载](https://chromewebstore.google.com/detail/videoadguard/nmkkpflniidbbodhjhjaijadbccidbgi/)
-- **Firefox浏览器**：[Firefox插件下载](https://addons.mozilla.org/zh-CN/firefox/addon/videoadguard/)
-
-### 油猴脚本版
-
-**注意**：油猴版本由于功能限制后续不维护，chromium内核浏览器推荐采用插件版
-
-1. 安装[篡改猴插件](https://www.tampermonkey.net/)
-2. 从[GreasyFork](https://greasyfork.org/zh-CN/scripts/531743-b%E7%AB%99%E8%A7%86%E9%A2%91%E6%A4%8D%E5%85%A5%E5%B9%BF%E5%91%8A%E6%A3%80%E6%B5%8B%E5%99%A8-videoadguard/)安装脚本
-
-## 使用方法
-
-1. **浏览器插件版**：安装完成后，点击插件图标完成设置
-
-   ![](https://imgbed.xiaobaozi.cn/file/blog/VideoAdGuard_popup1.webp)
-2. **油猴脚本版**：安装完成后，进入B站视频页面，点击右下角齿轮图标进行设置
-
-   ![](https://imgbed.xiaobaozi.cn/file/blog/VideoAdGuard2.webp)
-3. 设置API密钥和模型（详见下方API设置说明）
-4. 打开任意带有字幕的B站视频，插件会自动检测广告内容
-5. 当检测到广告时，会在视频播放器右下角显示"跳过广告"按钮
-
-### 交互式标记与反馈
-
-插件提供丰富的交互功能，帮你完善社区检测结果：
-
-- **跳过广告按钮**：点击可跳过当前广告片段
-- **交互式标记层**：视频进度条上会显示广告区间（红色标记）
-  - **点击**：切换该段广告的激活/暂停状态
-  - **拖拽边缘**：调整该段广告的起止时间
-  - **拖拽中间**：移动整个广告段的位置
-- **反馈按钮**：广告检测完成后，右下角会显示 ✗ 按钮
-  - **直接点击（无手动调整）**：标记为"不准确"，下次访问将重新检测
-  - **手动调整广告区间后点击**：提交你的修正结果，云端共享给其他用户
-
-> 📌 你的每一次反馈都在帮助社区提升检测准确率，感谢参与！
-
-## API设置说明
-
-本插件需要配置大语言模型API才能正常工作。检测能力与大模型能力强相关，推荐使用性能更强的大模型。
-
-### 大语言模型API（必需）
-
-插件支持多种SDK接入方式，可在设置页面中选择：
-
-- **OpenAI 兼容**：适用于 OpenAI、智谱AI、MiniMax、Kimi、DeepSeek、硅基流动、阿里云百炼、火山方舟、阶跃星辰、百度千帆、302.AI 等
-- **Anthropic 兼容**：适用于 Claude、智谱AI、MiniMax 等
-- **自定义 Fetch**：适用于 Ollama、LM Studio、vLLM 等本地模型
-
-设置页面提供多平台预设，一键配置即可使用。
-
-| SDK类型 | 支持平台                                          |
-| ------- | ------------------------------------------------- |
-| OpenAI 兼容 | 智谱AI、MiniMax、Kimi、DeepSeek、硅基流动、OpenRouter、OpenAI、Gemini、Grok、腾讯混元、阿里云百炼、火山方舟、阶跃星辰、百度千帆、302.AI、Requesty API 等 |
-| Anthropic 兼容 | Claude、智谱AI、MiniMax、腾讯云、阿里云、火山引擎、百度千帆 等 |
-| 自定义 Fetch | Ollama、LM Studio、vLLM、llama.cpp、LocalAI、Xinference、FastChat、Jan、One API 等 |
-
-> **注意**：使用本地模型时，如遇跨域问题，需设置环境变量，如 `OLLAMA_ORIGINS = *`
-
-### 音频识别API（可选）
-
-- **用途**：用于无字幕视频的音频识别功能
-- **推荐服务**：目前只支持Groq（免费Whisper模型）
-- **API密钥获取**：在[Groq平台](https://console.groq.com/keys)注册并获取
-- **注意**：如果要使用Groq API，需要特殊网络环境，也可勾选“官方接口失败时使用代理”走我的反代
-
-## 注意事项
-
-- **字幕检测**：优先使用视频字幕进行检测，准确度更高
-- **音频识别**：无字幕视频将自动启用音频识别功能
-- **API配置**：需要配置大语言模型API密钥，模型能力越强，检测效果越好
-- **音频识别API**：使用音频识别功能需要额外配置Groq API密钥
-- **费用提醒**：使用付费API时请注意token消耗和音频识别费用
-- **缓存机制**：检测结果会自动缓存24小时，提升重复访问速度
-- **调试信息**：众多调试信息会在控制台输出，遇到错误时可以查看控制台
-
-## 技术原理
-
-VideoAdGuard通过以下步骤检测视频中的植入广告
-
-### 检测流程
-
-1. 获取视频字幕内容（如无字幕则启用音频识别）
-2. 提取视频标题和置顶评论
-3. **优先查询缓存**：先查本地缓存（24h），再并行查云端缓存
-4. 如云端命中，直接使用云端结果；否则调用大语言模型分析
-5. 将数据发送给大语言模型进行分析
-6. 根据分析结果确定广告时间段
-7. 缓存检测结果到本地和云端
-8. 在界面上显示跳过按钮和交互式标记层
-
-### 智能缓存机制
-
-- **本地缓存**：检测结果自动缓存24小时，避免重复分析
-- **云端缓存**（可选）：社区共享检测结果，AI检测前优先查询云端
-  - 每个视频仅维护一条记录：`ad:{bvid}`
-  - `accuracy: 'accurate'` 的记录可被查询使用
-  - 用户标记"不准确"后该记录查询时被跳过，下次访问将重新AI检测
-  - 用户提交修正后记录为 `source: 'user'`，可供他人使用
-- 云端服务异常时静默降级，不影响本地检测能力
-
-### 音频识别模式
-
-1. 当视频无字幕时，自动下载视频音频流
-2. 使用Groq Whisper API进行语音识别
-3. 将识别结果转换为文本格式
-4. 后续流程与字幕检测模式相同
-
-## 目录结构
-
-```tree
-VideoAdGuard
-├── builds/                        # 构建产物（按浏览器区分）
-│   ├── chrome/                    # Chrome 打包目录
-│   └── firefox/                   # Firefox 打包目录
-├── src/                           # 源代码目录
-│   ├── background.ts             # 后台脚本（跨域代理）
-│   ├── content.ts                # 内容脚本（广告检测逻辑）
-│   ├── popup.ts/.html            # 弹窗设置界面
-│   ├── services/                  # 业务逻辑
-│   │   ├── ai.ts                 # AI 检测提示词与解析
-│   │   ├── bilibili.ts           # B站 API 客户端
-│   │   ├── cache.ts              # 本地缓存服务（24h TTL）
-│   │   ├── cloud-cache.ts        # 云端缓存服务（Cloudflare KV）
-│   │   ├── whitelist.ts          # UP主白名单
-│   │   ├── audio.ts              # 音频识别（浏览器适配）
-│   │   └── llm/                   # LLM 提供商抽象
-│   │       ├── config.ts         # 提供商解析
-│   │       ├── providers.ts      # OpenAI/Anthropic/Custom Fetch
-│   │       └── types.ts          # LLM 类型定义
-│   ├── utils/                     # 工具函数
-│   │   ├── wbi.ts                # B站 WBI 签名
-│   │   ├── errors.ts            # 错误规范化
-│   │   └── logger.ts            # 日志工具
-│   └── types/                     # TypeScript 类型定义
-│       └── cloud-cache.ts        # 云端缓存类型定义
-├── worker/                        # Cloudflare Worker（云端缓存网关）
-│   ├── src/index.ts              # Worker 入口，API 路由
-│   ├── wrangler.toml             # Worker 配置
-│   ├── package.json              # Worker 依赖
-│   └── README.md                 # 部署文档
-├── manifests/                     # 浏览器清单文件
-│   ├── manifest-chrome.json      # Chrome 清单
-│   └── manifest-firefox.json     # Firefox 清单
-├── _locales/                      # i18n 资源
-├── icons/                         # 插件图标资源
-├── scripts/                       # 构建脚本
-├── VideoAdGuard.Tampermonkey.js   # 油猴脚本版本（已停止维护）
-├── webpack.config.js              # Webpack 构建配置
-├── tsconfig.json                  # TypeScript 配置
-├── package.json                   # 项目依赖与脚本
-├── CLAUDE.md                      # Claude Code 指南
-├── LICENSE                        # 开源许可证
-└── README.md                      # 项目说明文档
+```text
+B站字幕 / Groq 转录
+        │
+        ▼
+重叠窗口粗筛（Noul）
+        │
+        ▼
+候选区域逐字幕细化（Noul）
+        │
+        ├── 商品候选选择（Choice）
+        ▼
+本地合并区间并映射为视频时间
+        │
+        ▼
+置信度与结构安全检查 → 标记 / 自动跳过
 ```
 
-## 自行构建
+## 安装 Chrome 版
 
-如果你想自行构建VideoAdGuard，可以按照以下步骤进行：
+### 使用 Release 成品
 
-1. 克隆本仓库到本地：
-   ```bash
-   git clone https://github.com/Warma10032/VideoAdGuard.git
-   cd VideoAdGuard
-   ```
-2. 安装依赖：
-   ```bash
-   npm install
-   ```
-3. 构建插件：
-   ```bash
-   npm run build
-   ```
+1. 从 [Releases](https://github.com/xianggelila177/VideoAdGuard-Jev/releases/latest) 下载 Chrome ZIP 并解压。
+2. 打开 `chrome://extensions/`。
+3. 开启“开发者模式”。
+4. 点击“加载已解压的扩展程序”，选择解压后的目录。
 
-## 开源与贡献
+### 从源码构建
 
-本项目完全开源，欢迎贡献代码和提出建议：
+需要 Node.js 18 或更高版本。
 
-- GitHub仓库：[https://github.com/Warma10032/VideoAdGuard](https://github.com/Warma10032/VideoAdGuard)
-- 问题反馈：[GitHub Issues](https://github.com/Warma10032/VideoAdGuard/issues)
-- 如遇任何插件不起作用问题，在提出Issues同时，附上浏览器(F12)控制台的错误日志/截图，以便我们更好地帮助你。
-- ![与后端api通信的请求在这里查看](https://imgbed.xiaobaozi.cn/file/blog/插件管理界面.webp)
+```bash
+npm ci
+npm test -- --run
+npm run build:chrome
+```
 
-### 贡献者
+Chrome 扩展输出到 `builds/chrome/`，随后可从 `chrome://extensions/` 加载该目录。
 
-<a href="https://github.com/Warma10032/VideoAdGuard/contributors">
-  <img src="https://contrib.rocks/image?repo=Warma10032/VideoAdGuard" /></a>
+## 配置
 
-## 免责声明
+1. 打开扩展弹窗，SDK 选择 `TypeSafe Jev`。
+2. Base URL 保持 `https://api.typesafe.ai`。
+3. 模型使用 `jev-latest`。
+4. 在 [TypeSafe 控制台](https://console.typesafe.ai/) 创建 API Key，填入插件后会自动保存。
+5. 打开或刷新带字幕的哔哩哔哩视频。
 
-本插件仅用于学习和研究目的，不得用于任何商业或非法用途。使用本插件所产生的一切后果，与作者和插件开发者无关。
+没有字幕的视频需要额外启用 Groq 语音识别并配置 Groq API Key。
 
-## 许可证
+## 安全与隐私
 
-本项目采用GPLv2许可证开源。
+- 仓库和 Release 均不包含任何 API Key。
+- API Key 使用 `chrome.storage.local` 保存在当前浏览器配置中。
+- 视频字幕、标题和广告候选信息会发送到用户配置的模型服务商进行分析。
+- 请勿提交 `.env`、密钥、浏览器用户目录或包含个人凭据的调试日志。
+- 自动跳过由保守阈值控制，但模型判断仍可能出错；重要场景建议关闭自动跳过并手动确认标记。
 
-## Star History
+## 开发与验证
 
-<a href="https://www.star-history.com/#Warma10032/videoadguard&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Warma10032/videoadguard&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Warma10032/videoadguard&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Warma10032/videoadguard&type=Date" />
- </picture>
-</a>
+```bash
+npm test -- --run
+npm run build:chrome
+```
+
+当前版本包含 TypeSafe 请求网关、端点规范化、窗口切分、字幕成员概率、区间合并和完整检测流程测试。
+
+关键目录：
+
+- `src/services/typesafe/`：Jev 请求类型、网关和两阶段广告检测器。
+- `src/services/llm/`：原有模型提供商及统一配置。
+- `src/content.ts`：B站字幕采集、缓存、安全检查和跳过逻辑。
+- `src/background.ts`：Manifest V3 后台请求代理。
+- `manifests/`：Chrome 与 Firefox 清单。
+
+## 来源与许可
+
+本项目沿用上游的 [GNU General Public License v2.0 or later](LICENSE)。分发修改版或二进制版本时，请同时遵守 GPL 的源码和许可义务，并保留上游归属信息。
+
+- 上游项目：[ZeroTang05/VideoAdGuard](https://github.com/ZeroTang05/VideoAdGuard)
+- 上游作者：[ZeroTang05](https://github.com/ZeroTang05)
+- Jev 文档：[TypeSafe AI Documentation](https://docs.typesafe.ai/)
+
+感谢 VideoAdGuard 的原作者和所有上游贡献者。

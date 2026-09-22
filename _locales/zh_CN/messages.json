@@ -1,10 +1,10 @@
 {
   "extensionName": {
-    "message": "VideoAdGuard",
+    "message": "VideoAdGuard Jev",
     "description": "扩展名称"
   },
   "extensionDescription": {
-    "message": "基于大语言模型，自动识别B站视频中的植入/口播广告，当视频进入与内容不相关口播广告时，可自动跳过广告。",
+    "message": "使用 TypeSafe Jev 两阶段分析B站字幕，识别植入/口播广告并在高置信度时自动跳过。",
     "description": "扩展描述"
   },
   "settingsTitle": {

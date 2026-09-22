@@ -1,10 +1,10 @@
 {
   "extensionName": {
-    "message": "VideoAdGuard",
+    "message": "VideoAdGuard Jev",
     "description": "Extension name"
   },
   "extensionDescription": {
-    "message": "Based on large language models, automatically detects embedded/sponsored ads in Bilibili videos. When videos enter irrelevant sponsored content, it can automatically skip ads.",
+    "message": "Uses two-stage TypeSafe Jev analysis to detect sponsored segments in Bilibili subtitles and skip only high-confidence matches.",
     "description": "Extension description"
   },
   "settingsTitle": {

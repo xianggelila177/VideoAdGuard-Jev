@@ -1,6 +1,12 @@
 node_modules/
 builds/
 
+.env
+.env.*
+!.env.example
+*.pem
+*.crx
+
 dist.crx
 dist.pem
 

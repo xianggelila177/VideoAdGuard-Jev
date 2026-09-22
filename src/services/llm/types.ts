@@ -1,4 +1,4 @@
-export type LLMProvider = 'openai' | 'anthropic' | 'custom_fetch';
+export type LLMProvider = 'openai' | 'anthropic' | 'custom_fetch' | 'typesafe';
 
 export type LLMResponseFormat = 'json' | 'text';
 
